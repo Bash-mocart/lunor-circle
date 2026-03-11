@@ -63,3 +63,10 @@ async def create_circle(
 - Never accept client-supplied end dates — always compute server-side
 - Never trust client-supplied user_id — decode from JWT via `decode_token()`
 - Never auto-generate Alembic migration without reviewing the diff
+
+## Active Technologies
+- Python 3.12 + FastAPI 0.115, SQLAlchemy 2.0 (async), Pydantic v2, python-jose, asyncpg, Alembic (001-savings-circles)
+- PostgreSQL 16 (separate DB: `lunor_circle`), Redis 7 (separate instance, for future use) (001-savings-circles)
+
+## Recent Changes
+- 001-savings-circles: Added Python 3.12 + FastAPI 0.115, SQLAlchemy 2.0 (async), Pydantic v2, python-jose, asyncpg, Alembic
