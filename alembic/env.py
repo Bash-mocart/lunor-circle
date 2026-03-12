@@ -11,6 +11,7 @@ from app.db.base import Base
 
 # Import all models so Alembic can see them for autogenerate
 import app.models.circle  # noqa: F401
+import app.models.member  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

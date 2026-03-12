@@ -58,5 +58,7 @@ class CircleResponse(BaseModel):
     start_when_members: bool
     status: str
     created_at: datetime
+    joined_count: int = 0
+    member_user_ids: list[str] = []
 
     model_config = {"from_attributes": True}
