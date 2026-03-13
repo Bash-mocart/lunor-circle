@@ -1,10 +1,17 @@
 import uuid
 from datetime import date, datetime
 
+from nanoid import generate
 from sqlalchemy import Boolean, Date, DateTime, Index, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+_INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/L
+
+
+def _generate_invite_code() -> str:
+    return generate(_INVITE_ALPHABET, 8)
 
 
 class SavingsCircle(Base):
@@ -25,6 +32,10 @@ class SavingsCircle(Base):
     grace_period_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     start_when_members: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    invite_code: Mapped[str | None] = mapped_column(
+        String(8), unique=True, nullable=True, index=True,
+        default=_generate_invite_code,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
