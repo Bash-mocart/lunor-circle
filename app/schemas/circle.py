@@ -57,6 +57,7 @@ class CircleResponse(BaseModel):
     grace_period_days: int
     start_when_members: bool
     status: str
+    invite_code: str | None = None
     created_at: datetime
     joined_count: int = 0
     member_user_ids: list[str] = []
