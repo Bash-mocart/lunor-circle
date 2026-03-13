@@ -1,7 +1,7 @@
 import uuid
 from collections import defaultdict
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,3 +86,73 @@ async def list_circles(
         data.append(response)
 
     return {"success": True, "data": data}
+
+
+@router.get("/{circle_id}", status_code=status.HTTP_200_OK)
+async def get_circle(
+    circle_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(SavingsCircle).where(SavingsCircle.id == circle_id)
+    )
+    circle = result.scalar_one_or_none()
+    if not circle:
+        raise HTTPException(status_code=404, detail="Circle not found")
+
+    members_result = await db.execute(
+        select(CircleMember)
+        .where(CircleMember.circle_id == circle_id)
+        .where(CircleMember.status == "active")
+    )
+    user_ids = [m.user_id for m in members_result.scalars().all()]
+
+    response = CircleResponse.model_validate(circle)
+    response.joined_count = len(user_ids)
+    response.member_user_ids = user_ids
+
+    return {"success": True, "data": response}
+
+
+@router.post("/{circle_id}/join", status_code=status.HTTP_200_OK)
+async def join_circle(
+    circle_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(SavingsCircle).where(SavingsCircle.id == circle_id)
+    )
+    circle = result.scalar_one_or_none()
+    if not circle:
+        raise HTTPException(status_code=404, detail="Circle not found")
+
+    members_result = await db.execute(
+        select(CircleMember)
+        .where(CircleMember.circle_id == circle_id)
+        .where(CircleMember.status == "active")
+    )
+    active_members = members_result.scalars().all()
+    user_ids = [m.user_id for m in active_members]
+
+    if user["id"] in user_ids:
+        raise HTTPException(status_code=409, detail="Already a member of this circle")
+
+    if len(user_ids) >= circle.members:
+        raise HTTPException(status_code=409, detail="Circle is full")
+
+    member = CircleMember(
+        id=str(uuid.uuid4()),
+        circle_id=circle_id,
+        user_id=user["id"],
+    )
+    db.add(member)
+    await db.commit()
+
+    user_ids.append(user["id"])
+    response = CircleResponse.model_validate(circle)
+    response.joined_count = len(user_ids)
+    response.member_user_ids = user_ids
+
+    return {"success": True, "data": response}
