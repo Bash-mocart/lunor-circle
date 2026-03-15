@@ -13,9 +13,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Access shared event bus Redis (lunor-nginx, port 6380 on host)
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     command: >
       sh -c "alembic upgrade head &&
              uvicorn main:app --host 0.0.0.0 --port 8000 --root-path /api/v1/circle"
