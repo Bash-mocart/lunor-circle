@@ -1,9 +1,15 @@
+import logging
 from datetime import date, datetime
 from enum import Enum
-from typing import Literal
 
+import httpx
+import redis.asyncio as aioredis
 from dateutil.relativedelta import relativedelta
 from pydantic import BaseModel, Field, model_validator
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class Frequency(str, Enum):
@@ -24,6 +30,48 @@ def compute_end_date(start: date, payout_count: int, frequency: Frequency) -> da
         Frequency.quarterly: relativedelta(months=payout_count * 3),
     }
     return start + intervals[frequency]
+
+
+async def get_matrix_room_ids(
+    circle_ids: list[str],
+    redis: aioredis.Redis,
+) -> dict[str, str | None]:
+    """
+    Return circle_id → matrix_room_id for the given IDs.
+    Checks Redis cache first (no TTL — room_id is immutable once created).
+    Falls back to lunor-matrix internal API for cache misses.
+    """
+    if not circle_ids:
+        return {}
+
+    cache_keys = [f"matrix_room:{cid}" for cid in circle_ids]
+    cached_values = await redis.mget(*cache_keys)
+
+    result: dict[str, str | None] = {}
+    missing: list[str] = []
+
+    for circle_id, cached in zip(circle_ids, cached_values):
+        if cached:
+            result[circle_id] = cached
+        else:
+            result[circle_id] = None
+            missing.append(circle_id)
+
+    if missing and settings.lunor_matrix_url:
+        async with httpx.AsyncClient(timeout=5) as client:
+            for circle_id in missing:
+                try:
+                    resp = await client.get(
+                        f"{settings.lunor_matrix_url}/internal/matrix/room/{circle_id}"
+                    )
+                    if resp.status_code == 200:
+                        room_id = resp.json()["matrix_room_id"]
+                        result[circle_id] = room_id
+                        await redis.set(f"matrix_room:{circle_id}", room_id)
+                except Exception:
+                    logger.warning("Could not fetch matrix_room_id for circle %s", circle_id)
+
+    return result
 
 
 class CreateCircleRequest(BaseModel):
@@ -61,5 +109,6 @@ class CircleResponse(BaseModel):
     created_at: datetime
     joined_count: int = 0
     member_user_ids: list[str] = []
+    matrix_room_id: str | None = None
 
     model_config = {"from_attributes": True}

@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # ── Event bus Redis (shared across all Lunor services for Pub/Sub) ─────────
     event_bus_url: str = "redis://localhost:6380/0"
 
+    # ── lunor-matrix internal URL (for room_id lookups) ───────────────────────
+    lunor_matrix_url: str = ""  # e.g. http://172.17.0.1:8004
+
     model_config = {"env_file": ".env"}
 
 

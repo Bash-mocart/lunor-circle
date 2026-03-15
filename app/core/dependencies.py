@@ -9,7 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.session import AsyncSessionLocal
 
+_redis_pool: aioredis.Redis | None = None
 _event_bus_pool: aioredis.Redis | None = None
+
+
+async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:
+    global _redis_pool
+    if _redis_pool is None:
+        _redis_pool = aioredis.from_url(settings.redis_url, decode_responses=True)
+    yield _redis_pool
 
 
 async def get_event_bus() -> AsyncGenerator[aioredis.Redis, None]:
