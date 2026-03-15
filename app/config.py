@@ -11,8 +11,11 @@ class Settings(BaseSettings):
     # ── Database (separate from all other services) ────────────────────────────
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/lunor_circle"
 
-    # ── Redis (dedicated instance for lunor-circle) ────────────────────────────
+    # ── Redis (dedicated instance for lunor-circle internal use) ──────────────
     redis_url: str = "redis://localhost:6379"
+
+    # ── Event bus Redis (shared across all Lunor services for Pub/Sub) ─────────
+    event_bus_url: str = "redis://localhost:6380/0"
 
     model_config = {"env_file": ".env"}
 
