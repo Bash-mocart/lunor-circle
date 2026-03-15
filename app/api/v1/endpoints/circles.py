@@ -1,11 +1,13 @@
 import uuid
 from collections import defaultdict
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user, get_db, get_event_bus
+from app.events.publisher import EventPublisher
 from app.models.circle import SavingsCircle
 from app.models.member import CircleMember
 from app.schemas.circle import CircleResponse, CreateCircleRequest, compute_end_date
@@ -18,6 +20,7 @@ async def create_circle(
     body: CreateCircleRequest,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
+    event_bus: aioredis.Redis = Depends(get_event_bus),
 ):
     end_date = compute_end_date(body.start_date, body.payout_count, body.frequency)
 
@@ -45,6 +48,10 @@ async def create_circle(
     )
     db.add(member)
     await db.commit()
+
+    publisher = EventPublisher(event_bus)
+    await publisher.circle_created(circle)
+    await publisher.member_joined(circle.id, user["id"])
 
     response = CircleResponse.model_validate(circle)
     response.joined_count = 1
@@ -129,6 +136,7 @@ async def join_circle_by_code(
     invite_code: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
+    event_bus: aioredis.Redis = Depends(get_event_bus),
 ):
     result = await db.execute(
         select(SavingsCircle).where(SavingsCircle.invite_code == invite_code.upper())
@@ -158,6 +166,8 @@ async def join_circle_by_code(
     )
     db.add(member)
     await db.commit()
+
+    await EventPublisher(event_bus).member_joined(circle.id, user["id"])
 
     user_ids.append(user["id"])
     response = CircleResponse.model_validate(circle)
@@ -199,6 +209,7 @@ async def join_circle(
     circle_id: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
+    event_bus: aioredis.Redis = Depends(get_event_bus),
 ):
     result = await db.execute(
         select(SavingsCircle).where(SavingsCircle.id == circle_id)
@@ -228,6 +239,8 @@ async def join_circle(
     )
     db.add(member)
     await db.commit()
+
+    await EventPublisher(event_bus).member_joined(circle_id, user["id"])
 
     user_ids.append(user["id"])
     response = CircleResponse.model_validate(circle)
