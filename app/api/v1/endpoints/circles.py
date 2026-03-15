@@ -58,17 +58,26 @@ async def list_circles(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(SavingsCircle)
-        .where(SavingsCircle.creator_id == user["id"])
-        .order_by(SavingsCircle.created_at.desc())
+    # Fetch all circles where the user has an active membership
+    # (creators are added as members at creation time, so this covers both)
+    my_memberships = await db.execute(
+        select(CircleMember.circle_id)
+        .where(CircleMember.user_id == user["id"])
+        .where(CircleMember.status == "active")
     )
-    circles = result.scalars().all()
+    circle_ids = [row[0] for row in my_memberships.all()]
 
-    circle_ids = [c.id for c in circles]
-
+    circles: list[SavingsCircle] = []
     members_by_circle: dict[str, list[str]] = defaultdict(list)
+
     if circle_ids:
+        circles_result = await db.execute(
+            select(SavingsCircle)
+            .where(SavingsCircle.id.in_(circle_ids))
+            .order_by(SavingsCircle.created_at.desc())
+        )
+        circles = circles_result.scalars().all()
+
         members_result = await db.execute(
             select(CircleMember)
             .where(CircleMember.circle_id.in_(circle_ids))
