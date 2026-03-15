@@ -57,19 +57,26 @@ async def get_matrix_room_ids(
             result[circle_id] = None
             missing.append(circle_id)
 
-    if missing and settings.lunor_matrix_url:
-        async with httpx.AsyncClient(timeout=5) as client:
-            for circle_id in missing:
-                try:
-                    resp = await client.get(
-                        f"{settings.lunor_matrix_url}/internal/matrix/room/{circle_id}"
-                    )
-                    if resp.status_code == 200:
-                        room_id = resp.json()["matrix_room_id"]
-                        result[circle_id] = room_id
-                        await redis.set(f"matrix_room:{circle_id}", room_id)
-                except Exception:
-                    logger.warning("Could not fetch matrix_room_id for circle %s", circle_id)
+    if missing:
+        if not settings.lunor_matrix_url:
+            logger.error(
+                "LUNOR_MATRIX_URL is not configured — matrix_room_id will be null for %d circle(s). "
+                "Set LUNOR_MATRIX_URL in .env to enable chat.",
+                len(missing),
+            )
+        else:
+            async with httpx.AsyncClient(timeout=5) as client:
+                for circle_id in missing:
+                    try:
+                        resp = await client.get(
+                            f"{settings.lunor_matrix_url}/internal/matrix/room/{circle_id}"
+                        )
+                        if resp.status_code == 200:
+                            room_id = resp.json()["matrix_room_id"]
+                            result[circle_id] = room_id
+                            await redis.set(f"matrix_room:{circle_id}", room_id)
+                    except Exception:
+                        logger.warning("Could not fetch matrix_room_id for circle %s", circle_id)
 
     return result
 
