@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 
+import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -7,6 +8,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.session import AsyncSessionLocal
+
+_redis_pool: aioredis.Redis | None = None
+_event_bus_pool: aioredis.Redis | None = None
+
+
+async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:
+    global _redis_pool
+    if _redis_pool is None:
+        _redis_pool = aioredis.from_url(settings.redis_url, decode_responses=True)
+    yield _redis_pool
+
+
+async def get_event_bus() -> AsyncGenerator[aioredis.Redis, None]:
+    global _event_bus_pool
+    if _event_bus_pool is None:
+        _event_bus_pool = aioredis.from_url(settings.event_bus_url, decode_responses=True)
+    yield _event_bus_pool
 
 _bearer = HTTPBearer()
 

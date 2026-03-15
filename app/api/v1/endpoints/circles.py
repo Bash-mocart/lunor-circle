@@ -1,14 +1,16 @@
 import uuid
 from collections import defaultdict
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user, get_db, get_event_bus, get_redis
+from app.events.publisher import EventPublisher
 from app.models.circle import SavingsCircle
 from app.models.member import CircleMember
-from app.schemas.circle import CircleResponse, CreateCircleRequest, compute_end_date
+from app.schemas.circle import CircleResponse, CreateCircleRequest, compute_end_date, get_matrix_room_ids
 
 router = APIRouter()
 
@@ -18,6 +20,8 @@ async def create_circle(
     body: CreateCircleRequest,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
+    event_bus: aioredis.Redis = Depends(get_event_bus),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     end_date = compute_end_date(body.start_date, body.payout_count, body.frequency)
 
@@ -46,9 +50,15 @@ async def create_circle(
     db.add(member)
     await db.commit()
 
+    publisher = EventPublisher(event_bus)
+    await publisher.circle_created(circle)
+    await publisher.member_joined(circle.id, user["id"])
+
     response = CircleResponse.model_validate(circle)
     response.joined_count = 1
     response.member_user_ids = [user["id"]]
+    room_ids = await get_matrix_room_ids([circle.id], redis)
+    response.matrix_room_id = room_ids.get(circle.id)
 
     return {"success": True, "data": response}
 
@@ -57,6 +67,7 @@ async def create_circle(
 async def list_circles(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     # Fetch all circles where the user has an active membership
     # (creators are added as members at creation time, so this covers both)
@@ -86,12 +97,15 @@ async def list_circles(
         for m in members_result.scalars().all():
             members_by_circle[m.circle_id].append(m.user_id)
 
+    room_ids = await get_matrix_room_ids([c.id for c in circles], redis)
+
     data = []
     for c in circles:
         user_ids = members_by_circle.get(c.id, [])
         response = CircleResponse.model_validate(c)
         response.joined_count = len(user_ids)
         response.member_user_ids = user_ids
+        response.matrix_room_id = room_ids.get(c.id)
         data.append(response)
 
     return {"success": True, "data": data}
@@ -102,6 +116,7 @@ async def get_circle_by_code(
     invite_code: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     result = await db.execute(
         select(SavingsCircle).where(SavingsCircle.invite_code == invite_code.upper())
@@ -120,6 +135,8 @@ async def get_circle_by_code(
     response = CircleResponse.model_validate(circle)
     response.joined_count = len(user_ids)
     response.member_user_ids = user_ids
+    room_ids = await get_matrix_room_ids([circle.id], redis)
+    response.matrix_room_id = room_ids.get(circle.id)
 
     return {"success": True, "data": response}
 
@@ -129,6 +146,8 @@ async def join_circle_by_code(
     invite_code: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
+    event_bus: aioredis.Redis = Depends(get_event_bus),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     result = await db.execute(
         select(SavingsCircle).where(SavingsCircle.invite_code == invite_code.upper())
@@ -159,10 +178,14 @@ async def join_circle_by_code(
     db.add(member)
     await db.commit()
 
+    await EventPublisher(event_bus).member_joined(circle.id, user["id"])
+
     user_ids.append(user["id"])
     response = CircleResponse.model_validate(circle)
     response.joined_count = len(user_ids)
     response.member_user_ids = user_ids
+    room_ids = await get_matrix_room_ids([circle.id], redis)
+    response.matrix_room_id = room_ids.get(circle.id)
 
     return {"success": True, "data": response}
 
@@ -172,6 +195,7 @@ async def get_circle(
     circle_id: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     result = await db.execute(
         select(SavingsCircle).where(SavingsCircle.id == circle_id)
@@ -190,6 +214,8 @@ async def get_circle(
     response = CircleResponse.model_validate(circle)
     response.joined_count = len(user_ids)
     response.member_user_ids = user_ids
+    room_ids = await get_matrix_room_ids([circle_id], redis)
+    response.matrix_room_id = room_ids.get(circle_id)
 
     return {"success": True, "data": response}
 
@@ -199,6 +225,8 @@ async def join_circle(
     circle_id: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
+    event_bus: aioredis.Redis = Depends(get_event_bus),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     result = await db.execute(
         select(SavingsCircle).where(SavingsCircle.id == circle_id)
@@ -229,9 +257,13 @@ async def join_circle(
     db.add(member)
     await db.commit()
 
+    await EventPublisher(event_bus).member_joined(circle_id, user["id"])
+
     user_ids.append(user["id"])
     response = CircleResponse.model_validate(circle)
     response.joined_count = len(user_ids)
     response.member_user_ids = user_ids
+    room_ids = await get_matrix_room_ids([circle_id], redis)
+    response.matrix_room_id = room_ids.get(circle_id)
 
     return {"success": True, "data": response}
