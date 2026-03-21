@@ -9,6 +9,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Get runner IP
+        id: ip
+        run: echo "ip=$(curl -sf https://api.ipify.org)" >> $GITHUB_OUTPUT
+
+      - name: Open SSH in Hetzner firewall
+        run: |
+          RULES=$(curl -sf \
+            -H "Authorization: Bearer ${{ secrets.HCLOUD_TOKEN }}" \
+            "https://api.hetzner.cloud/v1/firewalls/${{ secrets.HETZNER_FIREWALL_ID }}" \
+            | jq '[.firewall.rules[]] + [{"direction":"in","protocol":"tcp","port":"22","source_ips":["${{ steps.ip.outputs.ip }}/32"],"description":"ci-runner-temp"}]')
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.HCLOUD_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"rules\": $RULES}" \
+            "https://api.hetzner.cloud/v1/firewalls/${{ secrets.HETZNER_FIREWALL_ID }}/actions/set_rules"
+
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -16,17 +32,27 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
-            # Install Docker if not present
             if ! command -v docker &> /dev/null; then
               curl -fsSL https://get.docker.com | sh
               sudo usermod -aG docker $USER
               newgrp docker
             fi
-
-            # Clone or pull
             if [ ! -d "$HOME/lunor-circle" ]; then
               git clone https://${{ secrets.GH_PAT }}@github.com/Bash-mocart/lunor-circle.git $HOME/lunor-circle
             fi
             cd $HOME/lunor-circle
             git pull https://${{ secrets.GH_PAT }}@github.com/Bash-mocart/lunor-circle.git main
             docker compose up --build -d
+
+      - name: Remove runner IP from Hetzner firewall
+        if: always()
+        run: |
+          RULES=$(curl -sf \
+            -H "Authorization: Bearer ${{ secrets.HCLOUD_TOKEN }}" \
+            "https://api.hetzner.cloud/v1/firewalls/${{ secrets.HETZNER_FIREWALL_ID }}" \
+            | jq '[.firewall.rules[] | select(.description != "ci-runner-temp")]')
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.HCLOUD_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"rules\": $RULES}" \
+            "https://api.hetzner.cloud/v1/firewalls/${{ secrets.HETZNER_FIREWALL_ID }}/actions/set_rules"
