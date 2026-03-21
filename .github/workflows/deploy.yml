@@ -15,11 +15,15 @@ jobs:
 
       - name: Open SSH in Hetzner firewall
         run: |
-          RULES=$(curl -sf \
+          RESPONSE=$(curl -s \
             -H "Authorization: Bearer ${{ secrets.HCLOUD_TOKEN }}" \
-            "https://api.hetzner.cloud/v1/firewalls/${{ secrets.HETZNER_FIREWALL_ID }}" \
-            | jq '[.firewall.rules[]] + [{"direction":"in","protocol":"tcp","port":"22","source_ips":["${{ steps.ip.outputs.ip }}/32"],"description":"ci-runner-temp"}]')
-          curl -sf -X POST \
+            "https://api.hetzner.cloud/v1/firewalls/${{ secrets.HETZNER_FIREWALL_ID }}")
+          if echo "$RESPONSE" | jq -e .error > /dev/null 2>&1; then
+            echo "Hetzner API error: $(echo "$RESPONSE" | jq .error)"
+            exit 1
+          fi
+          RULES=$(echo "$RESPONSE" | jq '[.firewall.rules[]] + [{"direction":"in","protocol":"tcp","port":"22","source_ips":["${{ steps.ip.outputs.ip }}/32"],"description":"ci-runner-temp"}]')
+          curl -s --fail-with-body -X POST \
             -H "Authorization: Bearer ${{ secrets.HCLOUD_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d "{\"rules\": $RULES}" \
@@ -47,11 +51,11 @@ jobs:
       - name: Remove runner IP from Hetzner firewall
         if: always()
         run: |
-          RULES=$(curl -sf \
+          RESPONSE=$(curl -s \
             -H "Authorization: Bearer ${{ secrets.HCLOUD_TOKEN }}" \
-            "https://api.hetzner.cloud/v1/firewalls/${{ secrets.HETZNER_FIREWALL_ID }}" \
-            | jq '[.firewall.rules[] | select(.description != "ci-runner-temp")]')
-          curl -sf -X POST \
+            "https://api.hetzner.cloud/v1/firewalls/${{ secrets.HETZNER_FIREWALL_ID }}")
+          RULES=$(echo "$RESPONSE" | jq '[.firewall.rules[] | select(.description != "ci-runner-temp")]')
+          curl -s --fail-with-body -X POST \
             -H "Authorization: Bearer ${{ secrets.HCLOUD_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d "{\"rules\": $RULES}" \
