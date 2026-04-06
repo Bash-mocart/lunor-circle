@@ -64,10 +64,11 @@ async def get_voice_token(
         )
 
     # Mint a LiveKit JWT scoped to this room + user
+    display_name = user.get("first_name") or user["id"]
     token = (
         AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
-        .with_identity(user["id"])
-        .with_name(circle.name)
+        .with_identity(display_name)
+        .with_name(display_name)
         .with_grants(
             VideoGrants(
                 room_join=True,
