@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # ── lunor-matrix internal URL (for room_id lookups) ───────────────────────
     lunor_matrix_url: str = ""  # e.g. http://172.17.0.1:8004
 
+    # ── LiveKit ────────────────────────────────────────────────────────────────
+    livekit_api_key: str = "lunorkey"
+    livekit_api_secret: str = ""
+    livekit_url: str = "wss://voice.lunor.money"
+
     model_config = {"env_file": ".env"}
 
 
